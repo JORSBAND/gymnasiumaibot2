@@ -92,22 +92,28 @@
         
         const tg = window.Telegram.WebApp;
 
-        const firebaseConfig = {
-            apiKey: "AIzaSyACqfjNuUwbCRtjHN5nWl0YV74cK-8hABg",
-            authDomain: "gymnasiumaibot.firebaseapp.com",
-            projectId: "gymnasiumaibot",
-            storageBucket: "gymnasiumaibot.firebasestorage.app",
-            messagingSenderId: "814170930345",
-            appId: "1:814170930345:web:2c00f9279cad39c8a8bdb8",
-            measurementId: "G-J2N2F1RFSJ"
-        };
-        const __app_id = "default-app-id";
-        const __initial_auth_token = ""; // This will be provided by the environment
+        // Використовуйте глобальні змінні, надані середовищем
+        const firebaseConfig = JSON.parse(__firebase_config);
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
         const auth = getAuth(app);
         
+        // Виправлення помилки, пов'язаної з відсутністю `alert` та `confirm`
+        function showMessage(message) {
+            const modal = document.createElement('div');
+            modal.className = 'fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center p-4 z-50';
+            modal.innerHTML = `
+                <div class="bg-gray-800 rounded-lg p-6 w-full max-w-sm text-center">
+                    <p class="text-white mb-4">${message}</p>
+                    <button class="bg-[var(--tg-theme-button-color)] text-white font-bold py-2 px-4 rounded-md" onclick="this.closest('.fixed').remove()">OK</button>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
         const elements = {
             loaderScreen: document.getElementById('loader-screen'),
             loginModal: document.getElementById('login-modal'),
@@ -238,9 +244,9 @@
                 if (!text || !confirm('Ви впевнені?')) return;
                 try {
                     const data = await apiCall('/api/broadcast', { message: text });
-                    alert(`Розсилку завершено. Успішно: ${data.success}, Помилок: ${data.fail}`);
+                    showMessage(`Розсилку завершено. Успішно: ${data.success}, Помилок: ${data.fail}`);
                     renderAdminHome();
-                } catch(e) { alert(`Помилка: ${e.message}`); }
+                } catch(e) { showMessage(`Помилка: ${e.message}`); }
             };
             document.getElementById('improve-text-btn').onclick = async () => {
                 const btn = document.getElementById('improve-text-btn');
@@ -250,7 +256,7 @@
                 try {
                     const { improved_text } = await apiCall('/api/admin/improve_text', { text: textarea.value });
                     textarea.value = improved_text;
-                } catch(e) { alert(`Помилка: ${e.message}`); }
+                } catch(e) { showMessage(`Помилка: ${e.message}`); }
                 finally {
                     btn.disabled = false;
                     btn.textContent = '✨ Покращити (AI)';
@@ -314,11 +320,29 @@
 
         function copyToClipboard(userId) {
             const text = document.querySelector(`#ai-reply-${userId} p`).innerText;
-            navigator.clipboard.writeText(text).then(() => alert('Відповідь скопійовано!'));
+            navigator.clipboard.writeText(text).then(() => showMessage('Відповідь скопійовано!'));
         }
 
         async function initializeApp() {
             try {
+                // Вхід через Firebase Auth
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+
+                // Очікуємо, поки авторизація буде готова
+                await new Promise(resolve => {
+                    const unsubscribe = onAuthStateChanged(auth, user => {
+                        if (user) {
+                            session.id = user.uid;
+                            unsubscribe();
+                            resolve();
+                        }
+                    });
+                });
+
                 const data = await apiCall('/api/init');
                 if (data.authStatus === 'required') {
                     elements.loginModal.classList.remove('hidden');
@@ -365,7 +389,7 @@
                 session.id = data.user.id;
                 elements.loginModal.classList.add('hidden');
                 await initializeApp();
-            } catch(error) { alert(`Помилка: ${error.message}`); }
+            } catch(error) { showMessage(`Помилка: ${error.message}`); }
         });
         
         elements.adminPanelBtn.addEventListener('click', openAdminModal);
