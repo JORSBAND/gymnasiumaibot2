@@ -1,0 +1,10 @@
+python-telegram-bot[job-queue]
+google-generativeai
+requests
+beautifulsoup4
+pytz
+aiohttp
+aiohttp_cors
+firebase-admin
+
+  
