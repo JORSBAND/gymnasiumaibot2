@@ -10,6 +10,8 @@ from telegram.ext import (
     Application, CommandHandler, MessageHandler, filters, ContextTypes,
     CallbackQueryHandler, ConversationHandler
 )
+# Щоб уникнути помилки ModuleNotFoundError, переконайтеся, що ви встановили ці бібліотеки:
+# pip install python-telegram-bot google-generativeai requests beautifulsoup4 pytz firebase-admin aiohttp aiohttp-cors
 import requests
 from bs4 import BeautifulSoup
 import pytz
@@ -43,8 +45,14 @@ def _load_service_account_from_env_or_file() -> dict | None:
         env_strip = env_val.strip()
         if env_strip.startswith("{"):
             try:
-                return json.loads(env_strip)
-            except Exception as e:
+                # Fix for Invalid control character at: line 6 column 1727
+                # This often happens when the private key is not correctly formatted.
+                # The private key should have literal newline characters, not escaped ones.
+                data = json.loads(env_strip)
+                if isinstance(data.get("private_key"), str):
+                    data["private_key"] = data["private_key"].replace("\\n", "\n")
+                return data
+            except json.JSONDecodeError as e:
                 logging.error("FIREBASE_CREDENTIALS env var looks like JSON but failed to parse: %s", e)
         else:
             try:
@@ -80,9 +88,6 @@ try:
     sa_dict = _load_service_account_from_env_or_file()
     if sa_dict is None:
         raise RuntimeError("No Firebase credentials found: set FIREBASE_CREDENTIALS env var (JSON, base64 or path) or place service account JSON at ./gymnasiumaibot-firebase-adminsdk-fbsvc-f5905a6372.json")
-
-    if isinstance(sa_dict.get("private_key"), str):
-        sa_dict["private_key"] = sa_dict["private_key"].replace("\\n", "\n")
 
     cred = credentials.Certificate(sa_dict)
     try:
@@ -1650,7 +1655,10 @@ async def handle_news_action(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 return ConversationHandler.END
 
             await query.edit_message_text("🎨 *Генерую зображення...*", parse_mode='Markdown')
-            image_prompt_for_ai = f"Створи короткий опис (3-7 слів) англійською мовою для генерації зображення на основі цього тексту: {processed_text[:300]}"
+            image_prompt_for_ai = (
+                "На основі цього тексту, створи короткий опис (3-7 слів) англійською мовою для генерації зображення. Опис має бути символічним та мінімалістичним.\n\n"
+                f"Текст: {processed_text[:300]}"
+            )
             image_prompt = await generate_text_with_fallback(image_prompt_for_ai)
             image_bytes = await generate_image(image_prompt.strip() if image_prompt else "school news")
 
